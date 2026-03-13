@@ -1,56 +1,97 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
 
 export default function Home() {
   const [posts, setPosts] = useState<any[]>([])
-  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [currentUser, setCurrentUser] = useState<any>(null)
 
   useEffect(() => {
-    // 세션 체크
-    const checkUser = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (!data.session) router.push('/login')
+    const fetchPosts = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUser(user)
+
+      // posts 테이블에서 모든 데이터를 시간순으로 가져오기
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('글 목록 불러오기 실패:', error)
+      } else {
+        setPosts(data || [])
+      }
+      setLoading(false)
     }
-    checkUser()
+    
     fetchPosts()
   }, [])
 
-  const fetchPosts = async () => {
-    const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
-    if (data) setPosts(data)
+  const deletePost = async (postId: string) => {
+    if (!confirm('정말 삭제하시겠습니까?')) return
+    const { error } = await supabase.from('posts').delete().eq('id', postId)
+    if (error) {
+      alert('삭제 실패: ' + error.message)
+    } else {
+      setPosts(posts.filter(p => p.id !== postId))
+    }
   }
 
   return (
-    <main className="min-h-screen bg-[#F2F4F6] pb-20">
-      {/* 헤더 */}
-      <header className="sticky top-0 bg-[#F2F4F6]/90 backdrop-blur-sm p-6 border-b border-gray-200">
-        <h1 className="text-[20px] font-bold text-gray-900">익명 게시판</h1>
-      </header>
+    <main className="min-h-screen bg-[#F2F4F6] p-4 md:p-6 pb-24">
+      <div className="max-w-[400px] mx-auto space-y-6">
+        
+        <header className="py-4">
+          <h1 className="text-[24px] font-extrabold text-gray-900">판교고 커뮤니티</h1>
+        </header>
 
-      {/* 리스트 영역 */}
-      <section className="p-4 space-y-3">
-        {posts.map((post) => (
-          <div key={post.id} className="bg-white p-5 rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-            <h2 className="text-[17px] font-semibold text-gray-900 mb-1">{post.title}</h2>
-            <p className="text-[15px] text-gray-600 line-clamp-2 mb-3">{post.content}</p>
-            <div className="flex gap-3 text-[13px] text-gray-400">
-              <span>익명</span>
-              <span>{new Date(post.created_at).toLocaleDateString()}</span>
-            </div>
-          </div>
-        ))}
-      </section>
+        {loading ? (
+          <div className="text-center py-10 text-gray-500">불러오는 중...</div>
+        ) : (
+          <section className="space-y-4">
+            {posts.length === 0 ? (
+              <div className="text-center py-10 text-gray-400">아직 작성된 글이 없어요.</div>
+            ) : (
+              posts.map((post) => (
+                <div 
+                  key={post.id} 
+                  className="bg-white p-5 rounded-2xl shadow-sm hover:shadow-md transition-shadow relative"
+                >
+                  <Link href={`/post/${post.id}`}>
+                    <h2 className="font-bold text-[17px] text-gray-900 truncate">{post.title}</h2>
+                    <p className="text-[14px] text-gray-400 mt-1">
+                      {new Date(post.created_at).toLocaleDateString()}
+                    </p>
+                    <div className="text-[14px] text-gray-400 mt-1">
+                      조회수 {post.views || 0}회
+                    </div>
+                  </Link>
+                  {currentUser?.id === post?.user_id && (
+                    <button 
+                      onClick={(e) => { e.preventDefault(); deletePost(post.id); }} 
+                      className="absolute top-4 right-4 text-red-500 text-sm font-medium hover:text-red-700"
+                    >
+                      삭제
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </section>
+        )}
 
-      {/* 글쓰기 버튼 (플로팅) */}
-      <button 
-        onClick={() => router.push('/write')}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-[#3182F6] rounded-full shadow-lg text-white font-bold text-2xl hover:bg-blue-600 transition-transform hover:scale-105"
-      >
-        +
-      </button>
+        {/* 글쓰기 버튼 (우측 하단 고정) */}
+        <Link 
+          href="/write" 
+          className="fixed bottom-8 right-8 w-[60px] h-[60px] flex items-center justify-center bg-[#3182F6] text-white rounded-full shadow-lg hover:bg-blue-600 transition-transform hover:scale-105"
+        >
+          <span className="text-3xl font-light">+</span>
+        </Link>
+      </div>
     </main>
   )
 }
