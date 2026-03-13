@@ -34,7 +34,7 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} className="flex flex-col gap-4">
           <input
             type="email"
-            placeholder="이메일"
+            placeholder="pangyo.hs.kr 이메일로 로그인 해주세요"
             className="w-full h-12 px-4 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none placeholder:text-gray-500 text-gray-900"
             value={email}
             onChange={(e) => setEmail(e.target.value)}

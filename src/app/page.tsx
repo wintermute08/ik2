@@ -42,10 +42,10 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F2F4F6] p-4 md:p-6 pb-24">
+    <main className="min-h-screen bg-[#F2F4F6] p-4 md:p-6 pb-24 pt-20">
       <div className="max-w-[400px] mx-auto space-y-6">
         
-        <header className="py-4">
+        <header className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
           <h1 className="text-[24px] font-extrabold text-gray-900">판교고 커뮤니티</h1>
         </header>
 
