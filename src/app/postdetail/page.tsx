@@ -172,7 +172,7 @@ export default function PostDetailPage() {
 
   return (
     <main className="min-h-screen bg-white pb-20">
-      <header className="fixed top-0 w-full z-40 bg-white/80 backdrop-blur-md h-16 border-b border-[#E1E4E6] flex items-center px-2">
+      <header className="fixed top-0 w-full z-40 bg-white/80 backdrop-blur-md h-16 border-b border-[#191F28] flex items-center px-2">
         <button onClick={() => router.back()} className="p-2 text-[#191F28]">
           <ChevronLeft size={28} />
         </button>
