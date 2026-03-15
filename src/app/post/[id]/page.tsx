@@ -12,6 +12,7 @@ type Post = {
   content: string
   views: number
   user_id: string
+  category?: string | null
 }
 
 type Comment = {
