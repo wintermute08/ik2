@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import type { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
 
 export default function Header() {
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState<User | null>(null)
   const pathname = usePathname()
   const router = useRouter()
 
