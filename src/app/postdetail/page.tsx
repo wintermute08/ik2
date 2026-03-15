@@ -15,7 +15,7 @@ export default function PostDetailPage() {
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // 투표 상태
+  // 투표
   const [poll, setPoll] = useState<any>(null)
   const [pollOptions, setPollOptions] = useState<any[]>([])
   const [myVote, setMyVote] = useState<string | null>(null)
@@ -39,7 +39,7 @@ export default function PostDetailPage() {
       const [postRes, commentRes, pollRes] = await Promise.all([
         supabase.from('posts').select('*').eq('id', id).single(),
         supabase.from('comments').select('*').eq('post_id', id).order('created_at', { ascending: false }),
-        supabase.from('polls').select('*').eq('post_id', id).maybeSingle() // ✅ maybeSingle
+        supabase.from('polls').select('*').eq('post_id', id).single()
       ])
 
       setPost(postRes.data)
@@ -58,11 +58,11 @@ export default function PostDetailPage() {
 
         if (user) {
           const { data: myVoteData } = await supabase
-         .from('poll_votes')
-         .select('*')
-         .eq('poll_id', pollRes.data.id)
-         .eq('user_id', user.id)
-         .maybeSingle()
+  .from('poll_votes')
+  .select('*')
+  .eq('poll_id', pollRes.data.id)
+  .eq('user_id', user.id)
+  .maybeSingle()
 
           if (myVoteData) setMyVote(myVoteData.option_id)
         }
@@ -77,14 +77,17 @@ export default function PostDetailPage() {
     if (!currentUser) return toast.error('로그인 후 투표할 수 있어요.')
     if (myVote) return toast.error('이미 투표했어요.')
 
+    // 투표 기록 저장
     const { error } = await supabase
       .from('poll_votes')
       .insert([{ poll_id: poll.id, option_id: optionId, user_id: currentUser.id }])
 
     if (error) return toast.error('투표 실패: ' + error.message)
 
+    // vote_count 증가
     await supabase.rpc('increment_vote', { option_id: optionId })
 
+    // 로컬 상태 업데이트
     setMyVote(optionId)
     setPollOptions(pollOptions.map(o =>
       o.id === optionId ? { ...o, vote_count: (o.vote_count || 0) + 1 } : o
@@ -166,6 +169,7 @@ export default function PostDetailPage() {
                       ${myVote ? 'cursor-default' : 'hover:border-[#3182F6]'}
                       bg-white`}
                   >
+                    {/* 퍼센트 바 */}
                     {myVote && (
                       <div
                         className="absolute inset-y-0 left-0 bg-[#EBF3FE] transition-all"

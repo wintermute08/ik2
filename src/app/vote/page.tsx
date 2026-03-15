@@ -39,7 +39,7 @@ export default function PostDetailPage() {
       const [postRes, commentRes, pollRes] = await Promise.all([
         supabase.from('posts').select('*').eq('id', id).single(),
         supabase.from('comments').select('*').eq('post_id', id).order('created_at', { ascending: false }),
-        supabase.from('polls').select('*').eq('post_id', id).maybeSingle() // ✅ maybeSingle
+        supabase.from('polls').select('*').eq('post_id', id).maybeSingle()
       ])
 
       setPost(postRes.data)
@@ -58,11 +58,11 @@ export default function PostDetailPage() {
 
         if (user) {
           const { data: myVoteData } = await supabase
-         .from('poll_votes')
-         .select('*')
-         .eq('poll_id', pollRes.data.id)
-         .eq('user_id', user.id)
-         .maybeSingle()
+            .from('poll_votes')
+            .select('option_id')
+            .eq('poll_id', pollRes.data.id)
+            .eq('user_id', user.id)
+            .maybeSingle()
 
           if (myVoteData) setMyVote(myVoteData.option_id)
         }
@@ -91,6 +91,30 @@ export default function PostDetailPage() {
     ))
     setTotalVotes(prev => prev + 1)
     toast.success('투표 완료!')
+  }
+
+  const cancelVote = async () => {
+    if (!currentUser || !myVote) return
+
+    // 투표 기록 삭제
+    const { error } = await supabase
+      .from('poll_votes')
+      .delete()
+      .eq('poll_id', poll.id)
+      .eq('user_id', currentUser.id)
+
+    if (error) return toast.error('취소 실패: ' + error.message)
+
+    // vote_count 감소
+    await supabase.rpc('decrement_vote', { option_id: myVote })
+
+    // 로컬 상태 업데이트
+    setPollOptions(pollOptions.map(o =>
+      o.id === myVote ? { ...o, vote_count: Math.max(0, (o.vote_count || 1) - 1) } : o
+    ))
+    setTotalVotes(prev => Math.max(0, prev - 1))
+    setMyVote(null)
+    toast.success('투표가 취소되었어요.')
   }
 
   const deletePost = async () => {
@@ -148,7 +172,17 @@ export default function PostDetailPage() {
         {/* 투표 섹션 */}
         {poll && (
           <section className="bg-[#F9FAFB] p-6 rounded-[24px] space-y-4">
-            <h2 className="font-bold text-[17px] text-[#191F28]">📊 {poll.question}</h2>
+            <div className="flex justify-between items-center">
+              <h2 className="font-bold text-[17px] text-[#191F28]">📊 {poll.question}</h2>
+              {myVote && (
+                <button
+                  onClick={cancelVote}
+                  className="text-sm text-[#8B95A1] hover:text-red-500 transition-colors"
+                >
+                  취소
+                </button>
+              )}
+            </div>
             <div className="space-y-3">
               {pollOptions.map((option) => {
                 const percent = totalVotes > 0
@@ -168,7 +202,7 @@ export default function PostDetailPage() {
                   >
                     {myVote && (
                       <div
-                        className="absolute inset-y-0 left-0 bg-[#EBF3FE] transition-all"
+                        className="absolute inset-y-0 left-0 bg-[#EBF3FE] transition-all duration-500"
                         style={{ width: `${percent}%` }}
                       />
                     )}
