@@ -1,25 +1,52 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 import { ChevronLeft } from 'lucide-react'
 
+type Post = {
+  id: string
+  title: string
+  content: string
+  views: number
+  user_id: string
+}
+
+type Comment = {
+  id: string
+  content: string
+  user_id: string
+}
+
+type Poll = {
+  id: string
+  question: string
+}
+
+type PollOption = {
+  id: string
+  label: string
+  vote_count: number | null
+}
+
 export default function PostDetailPage() {
   const { id } = useParams()
   const router = useRouter()
-  const [post, setPost] = useState<any>(null)
-  const [comments, setComments] = useState<any[]>([])
+
+  const [post, setPost] = useState<Post | null>(null)
+  const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState('')
-  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // 투표 상태
-  const [poll, setPoll] = useState<any>(null)
-  const [pollOptions, setPollOptions] = useState<any[]>([])
+  const [poll, setPoll] = useState<Poll | null>(null)
+  const [pollOptions, setPollOptions] = useState<PollOption[]>([])
   const [myVote, setMyVote] = useState<string | null>(null)
   const [totalVotes, setTotalVotes] = useState(0)
+
+  const [anonMap, setAnonMap] = useState<Record<string, string>>({})
 
   const isViewIncremented = useRef(false)
 
@@ -29,7 +56,10 @@ export default function PostDetailPage() {
 
     const init = async () => {
       setIsLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       setCurrentUser(user)
 
       if (!id || typeof id !== 'string') return
@@ -38,12 +68,36 @@ export default function PostDetailPage() {
 
       const [postRes, commentRes, pollRes] = await Promise.all([
         supabase.from('posts').select('*').eq('id', id).single(),
-        supabase.from('comments').select('*').eq('post_id', id).order('created_at', { ascending: false }),
-        supabase.from('polls').select('*').eq('post_id', id).maybeSingle() // ✅ maybeSingle
+        supabase
+          .from('comments')
+          .select('*')
+          .eq('post_id', id)
+          .order('created_at', { ascending: false }),
+        supabase.from('polls').select('*').eq('post_id', id).maybeSingle(),
       ])
 
       setPost(postRes.data)
       setComments(commentRes.data || [])
+
+      if (postRes.data && commentRes.data) {
+        const userIds = Array.from(
+          new Set([
+            postRes.data.user_id,
+            ...commentRes.data.map((c: Comment) => c.user_id),
+          ].filter(Boolean))
+        )
+
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, anonymous_number')
+          .in('id', userIds)
+
+        const map: Record<string, string> = {}
+        profiles?.forEach((p) => {
+          map[p.id] = `익명${p.anonymous_number}`
+        })
+        setAnonMap(map)
+      }
 
       if (pollRes.data) {
         setPoll(pollRes.data)
@@ -54,15 +108,17 @@ export default function PostDetailPage() {
           .eq('poll_id', pollRes.data.id)
 
         setPollOptions(options || [])
-        setTotalVotes(options?.reduce((sum, o) => sum + (o.vote_count || 0), 0) || 0)
+        setTotalVotes(
+          options?.reduce((sum, o) => sum + (o.vote_count || 0), 0) || 0
+        )
 
         if (user) {
           const { data: myVoteData } = await supabase
-         .from('poll_votes')
-         .select('*')
-         .eq('poll_id', pollRes.data.id)
-         .eq('user_id', user.id)
-         .maybeSingle()
+            .from('poll_votes')
+            .select('*')
+            .eq('poll_id', pollRes.data.id)
+            .eq('user_id', user.id)
+            .maybeSingle()
 
           if (myVoteData) setMyVote(myVoteData.option_id)
         }
@@ -70,7 +126,8 @@ export default function PostDetailPage() {
 
       setIsLoading(false)
     }
-    init()
+
+    void init()
   }, [id])
 
   const vote = async (optionId: string) => {
@@ -79,25 +136,57 @@ export default function PostDetailPage() {
 
     const { error } = await supabase
       .from('poll_votes')
-      .insert([{ poll_id: poll.id, option_id: optionId, user_id: currentUser.id }])
+      .insert([{ poll_id: poll?.id, option_id: optionId, user_id: currentUser.id }])
 
     if (error) return toast.error('투표 실패: ' + error.message)
 
     await supabase.rpc('increment_vote', { option_id: optionId })
 
     setMyVote(optionId)
-    setPollOptions(pollOptions.map(o =>
-      o.id === optionId ? { ...o, vote_count: (o.vote_count || 0) + 1 } : o
-    ))
-    setTotalVotes(prev => prev + 1)
+    setPollOptions((prev) =>
+      prev.map((o) =>
+        o.id === optionId
+          ? { ...o, vote_count: (o.vote_count || 0) + 1 }
+          : o
+      )
+    )
+    setTotalVotes((prev) => prev + 1)
     toast.success('투표 완료!')
+  }
+
+  const cancelVote = async () => {
+    if (!currentUser || !myVote || !poll) return
+
+    const { error } = await supabase
+      .from('poll_votes')
+      .delete()
+      .eq('poll_id', poll.id)
+      .eq('user_id', currentUser.id)
+
+    if (error) return toast.error('취소 실패: ' + error.message)
+
+    await supabase.rpc('decrement_vote', { option_id: myVote })
+
+    setPollOptions((prev) =>
+      prev.map((o) =>
+        o.id === myVote
+          ? { ...o, vote_count: Math.max(0, (o.vote_count || 1) - 1) }
+          : o
+      )
+    )
+    setTotalVotes((prev) => Math.max(0, prev - 1))
+    setMyVote(null)
+    toast.success('투표가 취소되었어요.')
   }
 
   const deletePost = async () => {
     if (!confirm('정말 삭제하시겠습니까?')) return
     const { error } = await supabase.from('posts').delete().eq('id', id)
     if (error) toast.error('삭제 실패: ' + error.message)
-    else { toast.success('삭제되었습니다.'); router.push('/') }
+    else {
+      toast.success('삭제되었습니다.')
+      router.push('/')
+    }
   }
 
   const addComment = async () => {
@@ -109,15 +198,36 @@ export default function PostDetailPage() {
       .insert([{ post_id: id, content: newComment, user_id: currentUser.id }])
       .select()
 
-    if (error) toast.error('등록 실패: ' + error.message)
-    else { setComments([data[0], ...comments]); setNewComment('') }
+    if (error) {
+      toast.error('등록 실패: ' + error.message)
+      return
+    }
+
+    const newItem = data?.[0]
+    if (newItem?.user_id && !anonMap[newItem.user_id]) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, anonymous_number')
+        .eq('id', newItem.user_id)
+        .single()
+
+      if (profile) {
+        setAnonMap((prev) => ({
+          ...prev,
+          [profile.id]: `익명${profile.anonymous_number}`,
+        }))
+      }
+    }
+
+    setComments((prev) => [newItem, ...prev])
+    setNewComment('')
   }
 
   const deleteComment = async (commentId: string) => {
     if (!confirm('삭제하시겠습니까?')) return
     const { error } = await supabase.from('comments').delete().eq('id', commentId)
     if (error) toast.error('삭제 실패: ' + error.message)
-    else setComments(comments.filter(c => c.id !== commentId))
+    else setComments((prev) => prev.filter((c) => c.id !== commentId))
   }
 
   if (isLoading) return <main className="min-h-screen bg-white" />
@@ -131,29 +241,50 @@ export default function PostDetailPage() {
       </header>
 
       <div className="pt-20 px-4 max-w-[500px] mx-auto space-y-6">
-
         <article className="bg-[#F9FAFB] p-6 rounded-[24px]">
-          <div className="flex justify-between items-start mb-4">
-            <h1 className="text-2xl font-bold text-[#191F28] leading-tight">{post?.title}</h1>
+          <div className="flex justify-between items-start mb-2">
+            <h1 className="text-2xl font-bold text-[#191F28] leading-tight">
+              {post?.title}
+            </h1>
             {currentUser?.id === post?.user_id && (
-              <button onClick={deletePost} className="text-sm text-[#8B95A1] hover:text-red-500 font-medium ml-4">
+              <button
+                onClick={deletePost}
+                className="text-sm text-[#8B95A1] hover:text-red-500 font-medium ml-4"
+              >
                 삭제
               </button>
             )}
           </div>
-          <div className="text-[#8B95A1] text-sm mb-6">조회수 {post?.views}회</div>
-          <p className="text-[#191F28] text-[16px] leading-relaxed whitespace-pre-wrap">{post?.content}</p>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-[13px] font-semibold text-[#3182F6] bg-blue-50 px-2 py-0.5 rounded-full">
+              작성자
+            </span>
+            <span className="text-[#8B95A1] text-sm">조회수 {post?.views}회</span>
+          </div>
+          <p className="text-[#191F28] text-[16px] leading-relaxed whitespace-pre-wrap">
+            {post?.content}
+          </p>
         </article>
 
-        {/* 투표 섹션 */}
         {poll && (
           <section className="bg-[#F9FAFB] p-6 rounded-[24px] space-y-4">
-            <h2 className="font-bold text-[17px] text-[#191F28]">📊 {poll.question}</h2>
+            <div className="flex justify-between items-center">
+              <h2 className="font-bold text-[17px] text-[#191F28]">📊 {poll.question}</h2>
+              {myVote && (
+                <button
+                  onClick={cancelVote}
+                  className="text-sm text-[#8B95A1] hover:text-red-500 transition-colors"
+                >
+                  취소
+                </button>
+              )}
+            </div>
             <div className="space-y-3">
               {pollOptions.map((option) => {
-                const percent = totalVotes > 0
-                  ? Math.round((option.vote_count / totalVotes) * 100)
-                  : 0
+                const percent =
+                  totalVotes > 0
+                    ? Math.round((option.vote_count || 0) / totalVotes * 100)
+                    : 0
                 const isMyChoice = myVote === option.id
 
                 return (
@@ -163,21 +294,27 @@ export default function PostDetailPage() {
                     disabled={!!myVote}
                     className={`w-full text-left rounded-2xl overflow-hidden relative h-[52px] border-2 transition-all
                       ${isMyChoice ? 'border-[#3182F6]' : 'border-transparent'}
-                      ${myVote ? 'cursor-default' : 'hover:border-[#3182F6]'}
-                      bg-white`}
+                      ${myVote ? 'cursor-default' : 'hover:border-[#3182F6]'} bg-white`}
                   >
                     {myVote && (
                       <div
-                        className="absolute inset-y-0 left-0 bg-[#EBF3FE] transition-all"
+                        className="absolute inset-y-0 left-0 bg-[#EBF3FE] transition-all duration-500"
                         style={{ width: `${percent}%` }}
                       />
                     )}
                     <div className="absolute inset-0 flex items-center justify-between px-4">
-                      <span className={`text-[15px] font-medium ${isMyChoice ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
-                        {isMyChoice && '✓ '}{option.label}
+                      <span
+                        className={`text-[15px] font-medium ${
+                          isMyChoice ? 'text-[#3182F6]' : 'text-[#191F28]'
+                        }`}
+                      >
+                        {isMyChoice && '✓ '}
+                        {option.label}
                       </span>
                       {myVote && (
-                        <span className="text-[14px] text-[#8B95A1] font-medium">{percent}%</span>
+                        <span className="text-[14px] text-[#8B95A1] font-medium">
+                          {percent}%
+                        </span>
                       )}
                     </div>
                   </button>
@@ -188,7 +325,6 @@ export default function PostDetailPage() {
           </section>
         )}
 
-        {/* 댓글 섹션 */}
         <section className="space-y-4">
           <h2 className="font-bold text-lg text-[#191F28]">댓글 ({comments.length})</h2>
           <div className="flex gap-2">
@@ -198,17 +334,48 @@ export default function PostDetailPage() {
               className="flex-1 p-4 rounded-2xl bg-[#F9FAFB] outline-none text-[16px] text-[#191F28]"
               placeholder="댓글을 남겨보세요"
             />
-            <button onClick={addComment} className="bg-[#3182F6] text-white px-6 rounded-2xl font-bold">등록</button>
+            <button
+              onClick={addComment}
+              className="bg-[#3182F6] text-white px-6 rounded-2xl font-bold"
+            >
+              등록
+            </button>
           </div>
           <div className="space-y-3">
-            {comments.map((c) => (
-              <div key={c.id} className="p-4 bg-[#F9FAFB] rounded-2xl relative">
-                <p className="text-[#191F28] text-[15px] pr-12">{c.content}</p>
-                {currentUser?.id === c.user_id && (
-                  <button onClick={() => deleteComment(c.id)} className="absolute top-4 right-4 text-xs text-[#8B95A1] hover:text-red-500">삭제</button>
-                )}
-              </div>
-            ))}
+            {comments.map((c) => {
+              const isPostAuthor = c.user_id === post?.user_id
+              const isMe = c.user_id === currentUser?.id
+              const displayName = isPostAuthor ? '작성자' : anonMap[c.user_id] || '익명'
+
+              return (
+                <div key={c.id} className="p-4 bg-[#F9FAFB] rounded-2xl">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[13px] font-semibold px-2 py-0.5 rounded-full
+                        ${
+                          isPostAuthor
+                            ? 'text-[#3182F6] bg-blue-50'
+                            : 'text-[#8B95A1] bg-gray-100'
+                        }`}
+                      >
+                        {displayName}
+                      </span>
+                      {isMe && <span className="text-[11px] text-gray-400">(나)</span>}
+                    </div>
+                    {isMe && (
+                      <button
+                        onClick={() => deleteComment(c.id)}
+                        className="text-xs text-[#8B95A1] hover:text-red-500"
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[#191F28] text-[15px]">{c.content}</p>
+                </div>
+              )
+            })}
           </div>
         </section>
       </div>
