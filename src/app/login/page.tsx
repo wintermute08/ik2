@@ -17,6 +17,12 @@ export default function LoginPage() {
     setErrorMsg('')
     setLoading(true)
 
+    if (!email.toLowerCase().endsWith('@pangyo.hs.kr')) {
+      setErrorMsg('pangyo.hs.kr 이메일만 로그인할 수 있어요.')
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
@@ -40,19 +46,22 @@ export default function LoginPage() {
 
         <div className="text-center">
           <h1 className="text-2xl font-bold text-[#191F28]">로그인</h1>
+          <p className="mt-2 text-[14px] text-[#8B95A1]">
+            판교고등학교 익명 커뮤니티 입니다
+          </p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <input
             type="email"
-            placeholder="이메일"
+            placeholder="판교고 이메일"
             className="w-full p-4 bg-[#F9FAFB] rounded-2xl outline-none border border-transparent focus:border-[#3182F6] text-black font-medium text-[16px]"
             value={email}
             onChange={(e) => { setEmail(e.target.value); setErrorMsg('') }}
           />
           <input
             type="password"
-            placeholder="비밀번호"
+            placeholder="새로운 비밀번호"
             className="w-full p-4 bg-[#F9FAFB] rounded-2xl outline-none border border-transparent focus:border-[#3182F6] text-black font-medium text-[16px]"
             value={password}
             onChange={(e) => { setPassword(e.target.value); setErrorMsg('') }}

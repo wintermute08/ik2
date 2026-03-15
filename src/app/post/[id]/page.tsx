@@ -32,6 +32,8 @@ type PollOption = {
 }
 
 export default function PostDetailPage() {
+  const COMMENT_MAX = 300
+
   const { id } = useParams()
   const router = useRouter()
 
@@ -47,6 +49,7 @@ export default function PostDetailPage() {
   const [totalVotes, setTotalVotes] = useState(0)
 
   const [anonMap, setAnonMap] = useState<Record<string, string>>({})
+  const [nicknameMap, setNicknameMap] = useState<Record<string, string>>({})
 
   const isViewIncremented = useRef(false)
 
@@ -61,6 +64,12 @@ export default function PostDetailPage() {
         data: { user },
       } = await supabase.auth.getUser()
       setCurrentUser(user)
+
+      if (!user) {
+        router.push('/login')
+        setIsLoading(false)
+        return
+      }
 
       if (!id || typeof id !== 'string') return
 
@@ -89,14 +98,17 @@ export default function PostDetailPage() {
 
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, anonymous_number')
+          .select('id, anonymous_number, nickname')
           .in('id', userIds)
 
         const map: Record<string, string> = {}
+        const nickMap: Record<string, string> = {}
         profiles?.forEach((p) => {
           map[p.id] = `익명${p.anonymous_number}`
+          if (p.nickname) nickMap[p.id] = p.nickname
         })
         setAnonMap(map)
+        setNicknameMap(nickMap)
       }
 
       if (pollRes.data) {
@@ -180,6 +192,8 @@ export default function PostDetailPage() {
   }
 
   const deletePost = async () => {
+    if (currentUser?.id !== post?.user_id)
+      return toast.error('삭제 권한이 없어요.')
     if (!confirm('정말 삭제하시겠습니까?')) return
     const { error } = await supabase.from('posts').delete().eq('id', id)
     if (error) toast.error('삭제 실패: ' + error.message)
@@ -192,6 +206,8 @@ export default function PostDetailPage() {
   const addComment = async () => {
     if (!currentUser) return toast.error('로그인 후 이용하세요.')
     if (!newComment.trim()) return toast.error('댓글을 입력해주세요.')
+    if (newComment.trim().length > COMMENT_MAX)
+      return toast.error('댓글이 너무 길어요.')
 
     const { data, error } = await supabase
       .from('comments')
@@ -204,10 +220,10 @@ export default function PostDetailPage() {
     }
 
     const newItem = data?.[0]
-    if (newItem?.user_id && !anonMap[newItem.user_id]) {
+    if (newItem?.user_id && (!anonMap[newItem.user_id] || !nicknameMap[newItem.user_id])) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, anonymous_number')
+        .select('id, anonymous_number, nickname')
         .eq('id', newItem.user_id)
         .single()
 
@@ -216,6 +232,9 @@ export default function PostDetailPage() {
           ...prev,
           [profile.id]: `익명${profile.anonymous_number}`,
         }))
+        if (profile.nickname) {
+          setNicknameMap((prev) => ({ ...prev, [profile.id]: profile.nickname }))
+        }
       }
     }
 
@@ -224,6 +243,9 @@ export default function PostDetailPage() {
   }
 
   const deleteComment = async (commentId: string) => {
+    const target = comments.find((c) => c.id === commentId)
+    if (target && target.user_id !== currentUser?.id)
+      return toast.error('삭제 권한이 없어요.')
     if (!confirm('삭제하시겠습니까?')) return
     const { error } = await supabase.from('comments').delete().eq('id', commentId)
     if (error) toast.error('삭제 실패: ' + error.message)
@@ -256,6 +278,16 @@ export default function PostDetailPage() {
             )}
           </div>
           <div className="flex items-center gap-2 mb-4">
+            {post?.category && (
+              <span className="text-[13px] font-semibold text-[#3182F6] bg-blue-50 px-2 py-0.5 rounded-full">
+                {post.category}
+              </span>
+            )}
+            {post?.user_id && nicknameMap[post.user_id] && (
+              <span className="text-[13px] font-semibold text-[#191F28] bg-white px-2 py-0.5 rounded-full border border-[#E1E4E6]">
+                {nicknameMap[post.user_id]}
+              </span>
+            )}
             <span className="text-[13px] font-semibold text-[#3182F6] bg-blue-50 px-2 py-0.5 rounded-full">
               작성자
             </span>
@@ -333,6 +365,7 @@ export default function PostDetailPage() {
               onChange={(e) => setNewComment(e.target.value)}
               className="flex-1 p-4 rounded-2xl bg-[#F9FAFB] outline-none text-[16px] text-[#191F28]"
               placeholder="댓글을 남겨보세요"
+              maxLength={COMMENT_MAX}
             />
             <button
               onClick={addComment}
@@ -345,7 +378,8 @@ export default function PostDetailPage() {
             {comments.map((c) => {
               const isPostAuthor = c.user_id === post?.user_id
               const isMe = c.user_id === currentUser?.id
-              const displayName = isPostAuthor ? '작성자' : anonMap[c.user_id] || '익명'
+              const displayName =
+                nicknameMap[c.user_id] || (isPostAuthor ? '작성자' : anonMap[c.user_id] || '익명')
 
               return (
                 <div key={c.id} className="p-4 bg-[#F9FAFB] rounded-2xl">

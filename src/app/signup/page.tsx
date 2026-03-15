@@ -9,21 +9,41 @@ import { ChevronLeft } from 'lucide-react'
 
 export default function SignupPage() {
   const [email, setEmail] = useState('')
+  const [nickname, setNickname] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
   const router = useRouter()
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
+    setErrorMsg('')
+
+    if (!email.trim() || !nickname.trim() || !password.trim() || !confirmPassword.trim()) {
+      setErrorMsg('모든 항목을 입력해주세요.')
+      return
+    }
+
+    if (nickname.trim().length < 2 || nickname.trim().length > 12) {
+      setErrorMsg('닉네임은 2~12자로 입력해주세요.')
+      return
+    }
+
     if (password !== confirmPassword) {
-      return toast.error('비밀번호가 일치하지 않습니다.')
+      setErrorMsg('비밀번호가 일치하지 않습니다.')
+      return
+    }
+
+    if (!email.toLowerCase().endsWith('@pangyo.hs.kr')) {
+      setErrorMsg('pangyo.hs.kr 이메일만 가입할 수 있어요.')
+      return
     }
     
     setLoading(true)
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -32,8 +52,18 @@ export default function SignupPage() {
     })
 
     if (error) {
-      toast.error('회원가입 실패: ' + error.message)
+      setErrorMsg('회원가입 실패: ' + error.message)
     } else {
+      if (data.user?.id) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({ id: data.user.id, nickname: nickname.trim() }, { onConflict: 'id' })
+        if (profileError) {
+          setErrorMsg('닉네임 저장 실패: ' + profileError.message)
+          setLoading(false)
+          return
+        }
+      }
       toast.success('가입을 축하합니다! 이메일을 확인해주세요.')
       router.push('/login')
     }
@@ -59,22 +89,36 @@ export default function SignupPage() {
             placeholder="이메일"
             className="w-full p-4 bg-[#F9FAFB] rounded-2xl outline-none border border-transparent focus:border-[#3182F6] text-black font-medium text-[16px]"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => { setEmail(e.target.value); setErrorMsg('') }}
+          />
+          <input
+            type="text"
+            placeholder="닉네임"
+            className="w-full p-4 bg-[#F9FAFB] rounded-2xl outline-none border border-transparent focus:border-[#3182F6] text-black font-medium text-[16px]"
+            value={nickname}
+            maxLength={12}
+            onChange={(e) => { setNickname(e.target.value); setErrorMsg('') }}
           />
           <input
             type="password"
             placeholder="비밀번호"
             className="w-full p-4 bg-[#F9FAFB] rounded-2xl outline-none border border-transparent focus:border-[#3182F6] text-black font-medium text-[16px]"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => { setPassword(e.target.value); setErrorMsg('') }}
           />
           <input
             type="password"
             placeholder="비밀번호 확인"className="w-full p-4 bg-[#F9FAFB] rounded-2xl outline-none border 
             border-transparent focus:border-[#3182F6] text-black font-medium text-[16px]"
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            onChange={(e) => { setConfirmPassword(e.target.value); setErrorMsg('') }}
           />
+
+          {errorMsg && (
+            <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-2xl">
+              <span className="text-red-500 text-sm font-medium">{errorMsg}</span>
+            </div>
+          )}
           
           <button
             type="submit"

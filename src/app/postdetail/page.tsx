@@ -7,6 +7,8 @@ import toast from 'react-hot-toast'
 import { ChevronLeft } from 'lucide-react'
 
 export default function PostDetailPage() {
+  const COMMENT_MAX = 300
+
   const { id } = useParams()
   const router = useRouter()
   const [post, setPost] = useState<any>(null)
@@ -20,6 +22,7 @@ export default function PostDetailPage() {
   const [pollOptions, setPollOptions] = useState<any[]>([])
   const [myVote, setMyVote] = useState<string | null>(null)
   const [totalVotes, setTotalVotes] = useState(0)
+  const [nicknameMap, setNicknameMap] = useState<Record<string, string>>({})
 
   const isViewIncremented = useRef(false)
 
@@ -31,6 +34,12 @@ export default function PostDetailPage() {
       setIsLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
       setCurrentUser(user)
+
+      if (!user) {
+        router.push('/login')
+        setIsLoading(false)
+        return
+      }
 
       if (!id || typeof id !== 'string') return
 
@@ -44,6 +53,21 @@ export default function PostDetailPage() {
 
       setPost(postRes.data)
       setComments(commentRes.data || [])
+
+      if (postRes.data && commentRes.data) {
+        const userIds = Array.from(
+          new Set([postRes.data.user_id, ...commentRes.data.map((c: any) => c.user_id)].filter(Boolean))
+        )
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, nickname')
+          .in('id', userIds)
+        const map: Record<string, string> = {}
+        profiles?.forEach((p) => {
+          if (p.nickname) map[p.id] = p.nickname
+        })
+        setNicknameMap(map)
+      }
 
       if (pollRes.data) {
         setPoll(pollRes.data)
@@ -97,6 +121,8 @@ export default function PostDetailPage() {
   }
 
   const deletePost = async () => {
+    if (currentUser?.id !== post?.user_id)
+      return toast.error('삭제 권한이 없어요.')
     if (!confirm('정말 삭제하시겠습니까?')) return
     const { error } = await supabase.from('posts').delete().eq('id', id)
     if (error) toast.error('삭제 실패: ' + error.message)
@@ -106,6 +132,8 @@ export default function PostDetailPage() {
   const addComment = async () => {
     if (!currentUser) return toast.error('로그인 후 이용하세요.')
     if (!newComment.trim()) return toast.error('댓글을 입력해주세요.')
+    if (newComment.trim().length > COMMENT_MAX)
+      return toast.error('댓글이 너무 길어요.')
 
     const { data, error } = await supabase
       .from('comments')
@@ -113,10 +141,27 @@ export default function PostDetailPage() {
       .select()
 
     if (error) toast.error('등록 실패: ' + error.message)
-    else { setComments([data[0], ...comments]); setNewComment('') }
+    else {
+      const newItem = data?.[0]
+      if (newItem?.user_id && !nicknameMap[newItem.user_id]) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, nickname')
+          .eq('id', newItem.user_id)
+          .single()
+        if (profile?.nickname) {
+          setNicknameMap((prev) => ({ ...prev, [profile.id]: profile.nickname }))
+        }
+      }
+      setComments([data[0], ...comments])
+      setNewComment('')
+    }
   }
 
   const deleteComment = async (commentId: string) => {
+    const target = comments.find((c) => c.id === commentId)
+    if (target && target.user_id !== currentUser?.id)
+      return toast.error('삭제 권한이 없어요.')
     if (!confirm('삭제하시겠습니까?')) return
     const { error } = await supabase.from('comments').delete().eq('id', commentId)
     if (error) toast.error('삭제 실패: ' + error.message)
@@ -144,7 +189,14 @@ export default function PostDetailPage() {
               </button>
             )}
           </div>
-          <div className="text-[#8B95A1] text-sm mb-6">조회수 {post?.views}회</div>
+          <div className="flex items-center gap-2 mb-4">
+            {post?.user_id && nicknameMap[post.user_id] && (
+              <span className="text-[13px] font-semibold text-[#191F28] bg-white px-2 py-0.5 rounded-full border border-[#E1E4E6]">
+                {nicknameMap[post.user_id]}
+              </span>
+            )}
+            <span className="text-[#8B95A1] text-sm">조회수 {post?.views}회</span>
+          </div>
           <p className="text-[#191F28] text-[16px] leading-relaxed whitespace-pre-wrap">{post?.content}</p>
         </article>
 
@@ -201,16 +253,29 @@ export default function PostDetailPage() {
               onChange={(e) => setNewComment(e.target.value)}
               className="flex-1 p-4 rounded-2xl bg-[#F9FAFB] outline-none text-[16px] text-[#191F28]"
               placeholder="댓글을 남겨보세요"
+              maxLength={COMMENT_MAX}
             />
             <button onClick={addComment} className="bg-[#3182F6] text-white px-6 rounded-2xl font-bold">등록</button>
           </div>
           <div className="space-y-3">
             {comments.map((c) => (
-              <div key={c.id} className="p-4 bg-[#F9FAFB] rounded-2xl relative">
-                <p className="text-[#191F28] text-[15px] pr-12">{c.content}</p>
-                {currentUser?.id === c.user_id && (
-                  <button onClick={() => deleteComment(c.id)} className="absolute top-4 right-4 text-xs text-[#8B95A1] hover:text-red-500">삭제</button>
-                )}
+              <div key={c.id} className="p-4 bg-[#F9FAFB] rounded-2xl">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    {nicknameMap[c.user_id] && (
+                      <span className="text-[13px] font-semibold px-2 py-0.5 rounded-full text-[#8B95A1] bg-gray-100">
+                        {nicknameMap[c.user_id]}
+                      </span>
+                    )}
+                    {currentUser?.id === c.user_id && (
+                      <span className="text-[11px] text-gray-400">(나)</span>
+                    )}
+                  </div>
+                  {currentUser?.id === c.user_id && (
+                    <button onClick={() => deleteComment(c.id)} className="text-xs text-[#8B95A1] hover:text-red-500">삭제</button>
+                  )}
+                </div>
+                <p className="text-[#191F28] text-[15px]">{c.content}</p>
               </div>
             ))}
           </div>
