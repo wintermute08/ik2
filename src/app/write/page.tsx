@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { ChevronLeft } from 'lucide-react'
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -126,17 +127,14 @@ export default function WritePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F2F4F6] p-4 md:p-16">
-      <nav className="mb-8">
-        <button
-          onClick={() => router.push('/')}
-          className="text-sm font-medium text-gray-400 hover:text-gray-900 transition-colors"
-        >
-          ‹ 돌아가기
+    <main className="min-h-screen bg-[#F2F4F6] pb-20">
+      <header className="fixed top-0 w-full z-40 bg-white/80 backdrop-blur-md h-16 border-b border-[#E1E4E6] flex items-center px-2">
+        <button onClick={() => router.back()} className="p-2 text-[#191F28]">
+          <ChevronLeft size={28} />
         </button>
-      </nav>
+      </header>
 
-      <div className="max-w-[400px] mx-auto space-y-8">
+      <div className="pt-20 px-4 md:px-16 max-w-[400px] mx-auto space-y-8">
         <h1 className="text-[28px] font-extrabold text-gray-900 tracking-tight">글 쓰기</h1>
 
         <form onSubmit={handleSubmit} className="space-y-6">
